@@ -1,78 +1,67 @@
-# PrivateAIM Python Template
+# Kong Example
 
-This repository serves as a template for Python-based repositories within the PrivateAIM project.
-It comes preconfigured with tools for testing, building, linting and formatting your Python code.
+This repository provides a set of examples for using Kong as an API gateway, to make the available data stores (e.g., FHIR, S3) in a DIC available to Flame projects and analyses. It uses [kong-admin-python-client](https://github.com/PrivateAIM/kong-admin-python-client) to interact with Kong's Admin API.
 
 ## Prerequisites
 
-[Poetry](https://python-poetry.org/) is the Python package manager of choice.
-[Follow the installation instructions](https://python-poetry.org/docs/) and make sure that Poetry is working on your
-machine.
+[Poetry](https://python-poetry.org/) must be installed and an instance of Kong must be running. A way to start Kong is to use the [Kong Setup](https://github.com/PrivateAIM/node-keycloak-autosetup) repository.
 
-Using [PyCharm](https://www.jetbrains.com/pycharm/) as the primary IDE is not required, but heavily encouraged.
-The instructions in this document are mostly tailored towards PyCharm.
 
-## Project setup
+## Installation
 
-In GitHub, click on "Use this template", then "Create in a new repository".
-Enter the name of your repository and click on "Create repository".
-
-### With PyCharm
-
-Go to `Git > Clone…`.
-Enter the URL to the repository you just created and the directory you'd like to clone it to.
-Click on `Clone`.
-Confirm that you trust the project.
-PyCharm will then automatically set up a new Poetry environment with all configured dependencies for your repository.
-Open a terminal within PyCharm, then run `pre-commit install --install-hooks -t pre-commit -t commit-msg` to install the
-pre-commit hooks.
-
-### Manually
-
-Clone the repository.
-Open a terminal and navigate to the repository.
+Clone this repository.
+In a terminal, navigate to the repository's root directory.
 Run `poetry install`.
-This will create a new Poetry environment and install all dependencies.
-Run `poetry shell` to drop into the Poetry environment.
-Finally, run `pre-commit install --install-hooks -t pre-commit -t commit-msg` to install the pre-commit hooks.
 
-## Project structure
 
-The [project directory](./project) is the location to put all your Python code.
-Rename it to the actual name of your code project and modify the `packages` property in `pyproject.toml` accordingly.
+## Usage
 
-The [tests directory](./tests) is where all your tests go.
-Running `pytest` on the command line will automatically pick up any tests inside that directory and execute them.
-Refer to the pytest documentation for more information on how to write your tests and get the most out of pytest.
+Run `poetry shell`.
+You can then run `kadmin --help` to view the tool's options.
 
-The Poetry environment comes with these pre-installed dependencies:
+```bash
+$ kadmin --help
+Usage: kadmin [OPTIONS] COMMAND [ARGS]...
 
-- [pre-commit](https://pre-commit.com/) for pre-commit hooks
-- [pytest](https://docs.pytest.org/en/7.4.x/) for testing
-- [ruff](https://github.com/astral-sh/ruff) for code linting and formatting
+Options:
+  --kong-admin-url TEXT  URL to Kong Admin API
+  --help                 Show this message and exit.
 
-Furthermore, thanks to pre-commit, the following hooks are installed by default:
+Commands:
+  connect-project-to-datastore   Connect a project to a data store.
+  disconnect-project             Disconnect a project from all connected...
+  list-data-stores               List all data stores registered with Kong.
+  list-project-data-stores       List all data stores connected to a...
+  register-analysis-for-project  Register an analysis for a project and...
+  register-data-store            Register a data store with Kong.
+```
 
-- [out-of-the-box pre-commit hooks](https://github.com/pre-commit/pre-commit-hooks)
-    - `check-added-large-files`: prevents large files from being committed
-    - `check-toml`: checks TOML files for syntax errors
-    - `check-yaml`: checks YAML files for syntax errors
-    - `end-of-file-fixer`: checks for single newlines at the end of a file
-    - `trailing-whitespace`: removes trailing whitespaces from files
-- [ruff hook](https://github.com/astral-sh/ruff-pre-commit): lints and auto-formats files using ruff
-- [conventional commits hook](https://github.com/compilerla/conventional-pre-commit): checks commit messages against
-  the [conventional commits spec](https://www.conventionalcommits.org/en/v1.0.0/)
+## Examples
 
-If any of the pre-commit hooks fail, you will have to resolve all conflicts that have been pointed out, re-add all your
-previously staged files and commit again.
+- Register a FHIR data store with Kong
 
-## Linting and auto-formatting
+The following command registers a FHIR data store with Kong, using the specified protocol, host, port, path and tag. The command returns the ID of the registered data store. Note that here the tag is used to identify the data store type in the Kong Admin API. Plus, registering a data store with Kong does not make it routable.
+```bash
+$ kadmin --kong-admin-url http://localhost:8001 register-data-store https server.fire.ly 443 fhir
+data_store_id=$(kadmin --kong-admin-url http://localhost:8001 register-data-store https server.fire.ly 443 fhir | grep "Data store registered with Kong, id:" | awk '{print $NF}')
+```
 
-[Ruff](https://github.com/astral-sh/ruff) is the Python linter and formatter of choice.
-It is highly recommended to install
-the [Ruff plugin from the JetBrains Marketplace](https://plugins.jetbrains.com/plugin/20574-ruff).
-Once installed, go to `File > Settings…`, then navigate to `Tools > Ruff`.
-Make sure that "Run ruff when Reformat Code" is checked and that `Project Specific > ruff executable` points to the Ruff
-executable within your virtual environment.
-Next, go to `Tools > Actions on Save` and check "Reformat code".
-This will automatically run Ruff on a file every time it is saved.
+- Connect `project1` to the registered data store.
+
+This makes the data store routable under `{KONG_GATEWAY}/project1/fhir` and configures the necessary plugins like ACL and key authentication. This means that only analyses (consumers) registered with `project1` as  group and valid API key can access the data store.
+```bash
+$ kadmin --kong-admin-url http://localhost:8001 connect-project-to-datastore $data_store_id project1 fhir http GET
+Project connected to data store, id: 4884a465-b909-454d-a222-fb6dcf336798
+Key authentication plugin added, id: 611873a0-38ff-4732-b0ec-2db3f109bdf1
+ACL plugin added, id: 1e1e3b35-e0e8-4ac4-990c-81d7cf7daf78
+```
+
+- Register an analysis as a consumer for `project1`.
+
+This provides the analysis with an API key and configures the group with ACL plugin.
+```bash
+$ kadmin --kong-admin-url http://localhost:8001 register-analysis-for-project project1 analysis1-1
+Consumer added, id: e67a6653-f3ff-42ec-ace6-fbd43ab9930d
+ACL plugin configured for consumer, group: project1
+Key authentication plugin configured for consumer, api_key: ilppDVkDFTOJTcnydLbR3EshNuN6wObL
+```
